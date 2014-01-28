@@ -12,7 +12,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 import org.apache.commons.io.IOUtils;
 
@@ -130,7 +132,6 @@ public class WikiReader implements Iterable<WikiEntry>, Closeable {
                 if ( time != null ) {
                     stmt.setString( 1, time );
                 }
-                System.out.println( stmt.toString() );
                 results = stmt.executeQuery();
             } catch(SQLException e) {
                 if ( stmt != null ) {
@@ -147,7 +148,7 @@ public class WikiReader implements Iterable<WikiEntry>, Closeable {
 
         private boolean isLast() throws SQLException {
             if ( first && !results.isBeforeFirst() ) {
-                return false;
+                return true;
             }
             return results.isLast() || results.isAfterLast();
         }
@@ -180,6 +181,7 @@ public class WikiReader implements Iterable<WikiEntry>, Closeable {
         @Override
         public WikiEntry next() {
             try {
+                first = false;
                 if ( !results.next() ) {
                     throw new IllegalStateException();
                 }
@@ -216,9 +218,31 @@ public class WikiReader implements Iterable<WikiEntry>, Closeable {
             entry.put( "namespace", Integer.toString( pageNamespace ) );
             entry.put( "title", pageTitle );
             entry.put( "timestamp", revTimestamp );
-            entry.put( "text", text );
-            // TODO process text and extract semantic properties.
+            entry.putAll( processSemantics( text ) );
             return entry;
+        }
+
+        private Map<String, String> processSemantics(String content) {
+            Map<String, String> kvpairs = new HashMap<String, String>();
+            String[] p = content.trim().split("\\|");
+            for ( int i = 0; i < p.length; i++ ) {
+                // Template start
+                if ( p[i].contains("{{") ) {
+                    kvpairs.put( "template", p[i].replace( "{{", "" ).trim() );
+                // has free text
+                } else if ( p[i].contains("}}") &&
+                        p[i].trim().length() > 2 ) {
+                    kvpairs.put( "freetext", p[i].replace( "}}", "" ).trim() );
+                // template-internal property
+                } else if ( !p[i].contains("}}") ) {
+                    int idx = p[i].indexOf('=');
+                    String v = p[i].substring( idx + 1 ).trim();
+                    if ( !v.equals("") ) {
+                        kvpairs.put( p[i].substring( 0, idx ).trim(), v );
+                    }
+                }
+            }
+            return kvpairs;
         }
     }
 
